@@ -8,16 +8,8 @@ import (
 	"crypto/sha1"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 )
-
-func checkError(err error) {
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-}
 
 func writeHead(parts []string) string {
 	return strings.Join(parts, "\r\n") + "\r\n\r\n"
@@ -77,7 +69,7 @@ func wrapWriter(wt io.Writer, pwd string, iv []byte) io.Writer {
 func genStream(pwd string, iv []byte) cipher.Stream {
 	hasher := sha1.New()
 	hasher.Write([]byte(pwd))
-	key := hasher.Sum(nil)[:32]
+	key := hasher.Sum(nil)[:24]
 
 	block, err := aes.NewCipher(key)
 	if err != nil {

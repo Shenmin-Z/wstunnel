@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 )
@@ -28,22 +29,14 @@ func main() {
 		debug        = false
 	)
 	clientCmd.StringVar(&pf, "port-forward", "", "port forward: {local1}:{remote1};{local2}:{remote2}")
-	clientCmd.StringVar(&pf, "f", "", "port forward: {local1}:{remote1};{local2}:{remote2}")
 	clientCmd.StringVar(&serverAddr, "server", "", "address where server process is, e.g. http://1.1.1.1:8080")
-	clientCmd.StringVar(&serverAddr, "s", "", "address where server process is, e.g. http://1.1.1.1:8080")
 	clientCmd.StringVar(&badProxyAddr, "proxy", "", "proxy, e.g. http://user:password@1.1.1.1:8080")
-	clientCmd.StringVar(&badProxyAddr, "p", "", "proxy, e.g. http://user:password@1.1.1.1:8080")
 	clientCmd.StringVar(&pwd, "password", "", "password for encrytion")
-	clientCmd.StringVar(&pwd, "w", "", "password for encrytion")
 	clientCmd.BoolVar(&debug, "debug", false, "show debug info")
-	clientCmd.BoolVar(&debug, "d", false, "show debug info")
 
 	serverCmd.StringVar(&port, "port", "", "port on which the prcess is listening on")
-	serverCmd.StringVar(&port, "p", "", "port on which the prcess is listening on")
 	serverCmd.StringVar(&pwd, "password", "", "password for encrytion")
-	serverCmd.StringVar(&pwd, "w", "", "password for encrytion")
 	serverCmd.BoolVar(&debug, "debug", false, "show debug info")
-	serverCmd.BoolVar(&debug, "d", false, "show debug info")
 
 	if len(os.Args) < 2 {
 		fmt.Println("Need to specify: client or server")
@@ -64,14 +57,17 @@ func main() {
 
 	serverUrl, err := url.Parse(serverAddr)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("Invalid server:", serverAddr)
 	}
 	proxyUrl, err := url.Parse(badProxyAddr)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("Invalid proxy:", badProxyAddr)
 	}
 
 	if clientCmd.Parsed() {
+		if match, _ := regexp.MatchString(`^(\d+:\d+)?(;\d+:\d+)*$`, pf); !match {
+			log.Fatal("Invalid port forward format:", pf)
+		}
 		portMapping := [][2]string{}
 		for _, i := range strings.Split(pf, ";") {
 			if i == "" {
@@ -84,6 +80,9 @@ func main() {
 	}
 
 	if serverCmd.Parsed() {
+		if match, _ := regexp.MatchString(`^\d+$`, port); !match {
+			log.Fatal("Invalid port number:", port)
+		}
 		server(port, conf)
 	}
 }

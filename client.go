@@ -11,9 +11,13 @@ import (
 )
 
 func startClient(localPort, remotePort string, serverUrl, badProxyUrl *url.URL, conf env) {
+	activeCount := 0 // badC
+
 	createConn := func() (net.Conn, *bufio.Reader, error) {
 		badC, err := net.Dial("tcp", badProxyUrl.Host)
-		checkError(err)
+		if err != nil {
+			return nil, nil, err
+		}
 
 		// upgrade to websocket
 		// doesn't have to be real websocket
@@ -30,52 +34,64 @@ func startClient(localPort, remotePort string, serverUrl, badProxyUrl *url.URL, 
 		}
 		auth := base64.StdEncoding.EncodeToString([]byte(badProxyUrl.User.String()))
 		if auth != "" {
-			headers = append(headers, fmt.Sprintf("Proxy-Authorization:Basic %s", auth))
+			headers = append(headers, fmt.Sprintf("Proxy-Authorization: Basic %s", auth))
 		}
 		fmt.Fprint(badC, writeHead(headers))
 		head, bufRd := readHead(badC)
 		if head[0] != "HTTP/1.1 101 Switching Protocols" {
 			badC.Close()
-			return nil, nil, errors.New("Unexpected server response.")
+			return nil, nil, errors.New("Failed to upgrade to websocket.")
 		}
 
 		return badC, bufRd, nil
 	}
 
-	listen(localPort, remotePort, conf, createConn)
-}
+	listen := func() {
+		l, err := net.Listen("tcp", ":"+localPort)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		defer l.Close()
 
-func listen(localPort, remotePort string, conf env, createConn func() (net.Conn, *bufio.Reader, error)) {
-	l, err := net.Listen("tcp", fmt.Sprintf(":%s", localPort))
-	checkError(err)
-	defer l.Close()
-
-	for {
-		c, err := l.Accept()
-		checkError(err)
-		debugInfo(conf.debug, "Client: received request.")
-
-		go func() {
-			badC, bufRd, err := createConn()
+		for {
+			// client <=> user
+			localC, err := l.Accept()
 			if err != nil {
-				c.Close()
+				fmt.Println(err)
 				return
 			}
 
-			// communicate IV
-			iv := genIV()
-			fmt.Fprintf(badC, writeHead([]string{fmt.Sprintf("%x", iv)}))
+			go func() {
+				// client <=> bad proxy
+				badC, bufRd, err := createConn()
+				if err != nil {
+					localC.Close()
+					return
+				}
 
-			wrappedWriter := wrapWriter(badC, conf.pwd, iv)
-			wrappedReader := wrapReader(bufRd, conf.pwd, iv)
+				activeCount++
+        debugInfof(conf.debug, "local: %s ---> remote: %s\nClient: current connection #: %d\n", localPort, remotePort, activeCount)
 
-			// tell server which port to forward to
-			fmt.Fprintf(wrappedWriter, writeHead([]string{fmt.Sprintf("%s", remotePort)}))
+				// communicate IV
+				iv := genIV()
+				fmt.Fprintf(badC, writeHead([]string{fmt.Sprintf("%x", iv)}))
 
-			go io.Copy(wrappedWriter, c)
-			io.Copy(c, wrappedReader)
-			c.Close()
-			badC.Close()
-		}()
+				wrappedWriter := wrapWriter(badC, conf.pwd, iv)
+				wrappedReader := wrapReader(bufRd, conf.pwd, iv)
+
+				// tell server which port to forward to
+				fmt.Fprintf(wrappedWriter, writeHead([]string{fmt.Sprintf("%s", remotePort)}))
+
+				go io.Copy(localC, wrappedReader)
+				io.Copy(wrappedWriter, localC)
+				localC.Close()
+				badC.Close()
+				debugInfo(conf.debug, "Client: connection closed.")
+				activeCount--
+			}()
+		}
 	}
+
+	listen()
 }
