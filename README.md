@@ -43,7 +43,7 @@ Http proxy is running on *111.111.111.111:9090* which uses basic http authentica
 ./wstunnel client \
   -port-forward '6665:22' \
   -server 'http://100.100.100.100:8080' \
-  -port 'http://user:password@111.111.111.111:9090' \
+  -proxy 'http://user:password@111.111.111.111:9090' \
   -password password \
   -debug
 ```
